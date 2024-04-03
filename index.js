@@ -48,11 +48,32 @@ async function createAssignment(notion, databaseId, assignment) {
   }
 }
 
-const ADD_PHYSICS = false;
-const ADD_MATH = false;
-const ADD_CHEM = false;
-const DRY_RUN = true;
+const DRY_RUN = false;
 const DBG = true;
+
+const ADD_PHYSICS = false;
+const ADD_MATH = true;
+const ADD_CHEM = true;
+
+const to_iso_str_with_tz_offset = (some_date) => {
+  const m = {};
+  new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: "America/Los_Angeles",
+    timeZoneName: "short",
+  })
+    .formatToParts(some_date)
+    .forEach(({ type: a, value: b }) => (m[a] = b));
+
+  // iso 8601
+  return `${m.year}-${m.month}-${m.day}T${m.hour}:${m.minute}:${m.second}-07:00`;
+};
 
 /**
  * Given a list of days and a template name,
@@ -61,6 +82,38 @@ const DBG = true;
  * @param {number[][]} days_with_assignment
  * @param {[number, number, number]} due_triplet
  */
+const add_this_to_assignments = (
+  due_triplet,
+  prepend,
+  postpend,
+  subject,
+  assignments,
+  week,
+  day,
+  assignment_number,
+) => {
+  const week_1_day_1 = new Date("04/01/2024");
+  let temp_date = new Date(week_1_day_1.getTime());
+  temp_date.setDate(temp_date.getDate() + week * 7);
+
+  let day_of_week_now = temp_date.getDay();
+  let distance = day - day_of_week_now;
+  // inspired by https://stackoverflow.com/a/11789820/11742422
+
+  temp_date.setDate(temp_date.getDate() + distance);
+  // console.log(temp_date.toLocaleString());
+  temp_date.setHours(due_triplet[0], due_triplet[1], due_triplet[2]);
+
+  if (DBG) {
+    console.log(to_iso_str_with_tz_offset(temp_date));
+  }
+  assignments.push({
+    name: `${prepend}${assignment_number}${postpend}`,
+    startDate: to_iso_str_with_tz_offset(temp_date),
+    subject: subject,
+  });
+};
+
 const add_these_to_assignments = (
   days_with_assignment,
   due_triplet,
@@ -69,7 +122,6 @@ const add_these_to_assignments = (
   subject,
   assignments,
 ) => {
-  const week_1_day_1 = new Date("04/01/2024");
   if (DBG) {
     console.log(prepend + "x" + postpend);
   }
@@ -78,33 +130,18 @@ const add_these_to_assignments = (
     const week = a[0] - 1;
     const day = a[1];
 
-    let temp_date = new Date(week_1_day_1.getTime());
-    temp_date.setDate(temp_date.getDate() + week * 7);
+    add_this_to_assignments(
+      due_triplet,
+      prepend,
+      postpend,
+      subject,
+      assignments,
+      week,
+      day,
+      assignment_number,
+    );
 
-    let day_of_week_now = temp_date.getDay();
-    let distance = day - day_of_week_now;
-    // inspired by https://stackoverflow.com/a/11789820/11742422
-
-    temp_date.setDate(temp_date.getDate() + distance);
-    // console.log(temp_date.toLocaleString());
-    temp_date.setUTCHours(due_triplet[0] + 7, due_triplet[1], due_triplet[2]);
-
-    if (DBG) {
-      console.log(
-        temp_date.toLocaleString("en-US", {
-          timeZone: "America/Los_Angeles",
-        }),
-      );
-    }
-    assignments.push({
-      name: `${prepend}${assignment_number++}${postpend}`,
-      startDate: new Date(
-        temp_date.toLocaleString("en-US", {
-          timeZone: "America/Los_Angeles",
-        }),
-      ).toISOString(),
-      subject: subject,
-    });
+    assignment_number += 1;
   }
 };
 
@@ -124,40 +161,28 @@ async function main() {
   // HOWTO: ALREADY DONE, PROBABLY NEVER ENABLE AGAIN
   // desc: adds physics pre and post lecture assignments
   if (ADD_PHYSICS) {
-    const week_1_day_1 = new Date("04/01/2024");
-
     let lecture_number = 1;
     // for every monday, tue, wed from 2024
 
-    for (let i = 0; i < 10; i++) {
+    const pre_lec_due_triplet = [10, 59, 59];
+    const post_lec_due_triplet = [23, 59, 59];
+
+    for (let week = 0; week < 10; week++) {
       for (let j = 0; j < 3; j++) {
+        let day = 1 + j * 2;
+
         for (let k = 0; k < 2; k++) {
-          let temp_date = new Date(week_1_day_1.getTime());
-          temp_date.setDate(temp_date.getDate() + i * 7);
-
-          let day_of_week_to_set = 1 + j * 2;
-          let day_of_week_now = temp_date.getDay();
-          let distance = day_of_week_to_set - day_of_week_now;
-          // inspired by https://stackoverflow.com/a/11789820/11742422
-
-          temp_date.setDate(temp_date.getDate() + distance);
-          // console.log(temp_date.toLocaleString());
-          temp_date.setUTCHours(k == 0 ? 10 + 7 : 23 + 7, 59, 59);
-
-          assignments.push({
-            name:
-              k == 0
-                ? `Get Ready for Lecture ${lecture_number}`
-                : `Post-Lecture ${lecture_number}`,
-            startDate: new Date(
-              temp_date.toLocaleString("en-US", {
-                timeZone: "America/Los_Angeles",
-              }),
-            ).toISOString(),
-            subject: "PH 212",
-          });
+          add_this_to_assignments(
+            k == 0 ? pre_lec_due_triplet : post_lec_due_triplet,
+            k == 0 ? "Get Ready for Lecture " : "Post-Lecture ",
+            "",
+            "PH 212",
+            assignments,
+            week,
+            day,
+            lecture_number,
+          );
         }
-        // this is jank but watvs
         lecture_number += 1;
       }
     }
@@ -350,6 +375,7 @@ async function main() {
     for (let i = 0; i < assignments.length; i++) {
       await createAssignment(notion, databaseId, assignments[i]);
     }
+    // await createAssignment(notion, databaseId, assignments[0]);
   }
 }
 
